@@ -1,90 +1,163 @@
+-- lua/custom/plugins/lsp.lua
+-- Extra LSP, Treesitter, formatter and diagnostics helpers for kickstart.nvim
 return {
-	{
-		-- Mason core: installs external binaries like LSP servers and formatters
-		'williamboman/mason.nvim',
-		build = ':MasonUpdate',
-		config = function()
-			require('mason').setup()
-		end,
-	},
+  ---------------------------------------------------------------------------
+  -- Mason-Lspconfig ---------------------------------------------------------
+  ---------------------------------------------------------------------------
+  {
+    'williamboman/mason-lspconfig.nvim',
+    opts = function(_, opts)
+      opts.ensure_installed = opts.ensure_installed or {}
+      -- Add your servers to the list
+      local add = { 'svls', 'vhdl_ls', 'yamlls', 'marksman' }
+      local present = {}
+      for _, s in ipairs(opts.ensure_installed or {}) do
+        present[s] = true
+      end
+      for _, s in ipairs(add) do
+        if not present[s] then
+          table.insert(opts.ensure_installed, s)
+        end
+      end
+    end,
+  },
 
-	{
-		-- LSP bridge between Mason and lspconfig (no setup_handlers)
-		'williamboman/mason-lspconfig.nvim',
-		dependencies = {
-			'williamboman/mason.nvim',
-			'neovim/nvim-lspconfig',
-			'VonHeikemen/lsp-zero.nvim',
-		},
-		config = function()
-			local mason_lspconfig = require('mason-lspconfig')
-			local lspconfig       = require('lspconfig')
-			local lsp_zero        = require('lsp-zero')
+  ---------------------------------------------------------------------------
+  -- nvim-lspconfig ----------------------------------------------------------
+  ---------------------------------------------------------------------------
+  {
+    'neovim/nvim-lspconfig',
+    -- The opts table defines your server-specific settings.
+    opts = {
+      servers = {
+        -- SystemVerilog
+        svls = {
+          settings = {
+            systemverilog = {
+              includeIndexing = { '**/*.{sv,svh}' },
+              excludeIndexing = { 'test/**/*' },
+              defines = {},
+              launchConfiguration = 'verilator --sv', -- keep it simple
+              lintOnUnsaved = true,
+              lintConfig = {
+                rules = {
+                  case_default = true,
+                  multi_driven = true,
+                  enum_with_type = true,
+                  unique_case = true,
+                  module_name_style = 'lower_snake_case',
+                  parameter_name_style = 'UPPER_SNAKE_CASE',
+                  variable_name_style = 'lower_snake_case',
+                  style_indent = false,
+                  style_textwidth = false,
+                  re_required_copyright = false,
+                  re_required_header = false,
+                  blocking_assignment_in_always_ff = false,
+                  non_blocking_assignment_in_always_comb = false,
+                },
+              },
+            },
+          },
+          root_dir = function(fname)
+            local util = require 'lspconfig.util'
+            return util.root_pattern('.git', '.svls.toml', 'hdl.tcl')(fname)
+              or util.root_pattern('Makefile', 'meson.build')(fname)
+          end,
+        },
 
-			--- 1) Install & ensure servers
-			local servers         = {
-				'pyright', -- Python
-				'clangd', -- C/C++
-				'bashls', -- Bash
-				'marksman', -- Markdown
-				'svls', -- SystemVerilog
-				'verible', -- Verilog (format/lint)
-				'vhdl_ls', -- VHDL
-			}
+        -- VHDL
+        vhdl_ls = {
+          settings = {
+            vhdl_ls = {},
+          },
+        },
 
-			mason_lspconfig.setup({
-				ensure_installed = servers,
-			})
+        -- YAML
+        yamlls = {
+          settings = {
+            yaml = {
+              keyOrdering = false,
+              validate = true,
+              format = { enable = true },
+              schemaStore = { enable = false, url = '' },
+            },
+          },
+        },
 
-			--- 2) Prepare lsp-zero defaults
-			lsp_zero.extend_lspconfig()
+        -- Markdown
+        marksman = {},
+      },
+    },
+    -- This config function ensures the servers are started correctly
+    -- with the necessary completion capabilities.
+    config = function(_, opts)
+      local lspconfig = require 'lspconfig'
+      local capabilities = require('cmp_nvim_lsp').default_capabilities()
 
-			--- 3) Manually setup each server
-			for _, name in ipairs(servers) do
-				lspconfig[name].setup({})
-			end
-		end,
-	},
+      for server_name, server_opts in pairs(opts.servers) do
+        -- Ensure capabilities are merged, not overwritten
+        server_opts.capabilities = vim.tbl_deep_extend('force', {}, capabilities, server_opts.capabilities or {})
+        -- Start the server
+        lspconfig[server_name].setup(server_opts)
+      end
+    end,
+  },
 
-	{
-		-- Formatter/Linter integration with Mason
-		'jay-babu/mason-null-ls.nvim',
-		dependencies = {
-			'williamboman/mason.nvim',
-			'nvimtools/none-ls.nvim', -- maintained fork of null-ls
-		},
-		config = function()
-			require('mason-null-ls').setup({
-				ensure_installed = {
-					-- Python
-					'black',
-					'isort',
-					'flake8',
-					'autopep8',
-					-- C/C++
-					'clang-format',
-					-- Shell
-					'shfmt',
-					-- Markdown
-					'markdownlint',
-					-- HDL
-					'verible-verilog-format',
-				},
-				automatic_installation = true,
-			})
-		end,
-	},
+  ---------------------------------------------------------------------------
+  -- Conform – formatter manager --------------------------------------------
+  ---------------------------------------------------------------------------
+  {
+    'stevearc/conform.nvim',
+    opts = function(_, opts)
+      opts.formatters_by_ft = vim.tbl_deep_extend('force', opts.formatters_by_ft or {}, {
+        markdown = { 'markdownlint' },
+        sh = { 'shfmt' },
+        bash = { 'shfmt' },
+        yaml = { 'yamlfmt' },
+        -- Uncomment when you actually have Verible installed:
+        -- systemverilog  = { 'verible_verilog_format' },
+        -- verilog        = { 'verible_verilog_format' },
+      })
 
-	{
-		-- Formatter engine with LSP fallback
-		'stevearc/conform.nvim',
-		config = function()
-			require('conform').setup({
-				format_on_save = {
-					timeout_ms = 2000,
-					lsp_fallback = true,
-				},
-			})
-		end,
-	},
+      opts.format_on_save = function(bufnr)
+        local ft = vim.bo[bufnr].filetype
+        return ft ~= '' and opts.formatters_by_ft[ft] ~= nil
+      end
+
+      return opts
+    end,
+  },
+
+  ---------------------------------------------------------------------------
+  -- Treesitter --------------------------------------------------------------
+  ---------------------------------------------------------------------------
+  {
+    'nvim-treesitter/nvim-treesitter',
+    opts = function(_, opts)
+      opts.ensure_installed = opts.ensure_installed or {}
+      local extra = { 'verilog', 'vhdl' } -- Verilog parser covers SystemVerilog
+      vim.list_extend(opts.ensure_installed, extra)
+    end,
+  },
+
+  ---------------------------------------------------------------------------
+  -- Trouble.nvim ------------------------------------------------------------
+  ---------------------------------------------------------------------------
+  {
+    'folke/trouble.nvim',
+    cmd = 'Trouble',
+    dependencies = { 'nvim-tree/nvim-web-devicons' },
+    opts = {
+      use_diagnostic_signs = true,
+      auto_close = true,
+    },
+    keys = {
+      { '<leader>td', '<cmd>Trouble diagnostics toggle<cr>', desc = '[T]rouble: [D]iagnostics' },
+      { '<leader>tb', '<cmd>Trouble diagnostics toggle filter.buf=0<cr>', desc = '[T]rouble: Buffer' },
+      { '<leader>ts', '<cmd>Trouble symbols toggle focus=false<cr>', desc = '[T]rouble: [S]ymbols' },
+      { '<leader>tl', '<cmd>Trouble lsp toggle focus=false win.position=right<cr>', desc = '[T]rouble: LS' },
+      { '<leader>tL', '<cmd>Trouble loclist toggle<cr>', desc = '[T]rouble: [L]oclist' },
+      { '<leader>tq', '<cmd>Trouble qflist toggle<cr>', desc = '[T]rouble: [Q]uickfix' },
+    },
+  },
 }
