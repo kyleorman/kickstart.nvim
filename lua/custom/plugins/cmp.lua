@@ -27,7 +27,7 @@ return {
       mapping = {
         ['<C-k>'] = cmp.mapping.select_prev_item { behavior = 'select' },
         ['<C-j>'] = cmp.mapping.select_next_item { behavior = 'select' },
-        ['<C-Space>'] = cmp.mapping.complete(),
+        -- ['<C-Space>'] = cmp.mapping.complete(), -- Disabled to avoid conflict with Copilot
         ['<CR>'] = cmp.mapping.confirm { select = true },
 
         ['<Tab>'] = cmp.mapping(function(fallback)
