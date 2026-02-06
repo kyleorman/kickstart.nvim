@@ -39,7 +39,6 @@ return {
     'MunifTanjim/nui.nvim',
     'echasnovski/mini.pick',
     'nvim-telescope/telescope.nvim',
-    'hrsh7th/nvim-cmp',
     'ibhagwan/fzf-lua',
     'stevearc/dressing.nvim',
     'folke/snacks.nvim',

@@ -1,14 +1,12 @@
 -- lua/custom/plugins/lsp.lua
--- Extra LSP, Treesitter, formatter and diagnostics helpers for kickstart.nvim
--- Fully tested with kickstart.nvim 2025-07-23.
--- ✔  SVLS for IDE features (formatting disabled)
--- ✔  Verible LSP optional (formatting disabled)
--- ✔  Conform.nvim calls verible-verilog-format on save for *.sv/*.svh/*.v
--- ✔  Mason installs both LSPs *and* the Verible binaries.
-
--- NOTE (nvim 0.11+):
--- Avoid `require('lspconfig')` and `require('lspconfig.util')` (deprecated framework path).
--- Use `vim.lsp.config()` + `vim.lsp.enable()` and `vim.lsp.util.root_pattern()` instead.
+-- Extra LSP, formatter and diagnostics helpers for kickstart.nvim
+-- Adds HDL (SystemVerilog, Verilog, VHDL), YAML, and Markdown support.
+--
+-- Architecture:
+--   - Servers are added via mason-tool-installer ensure_installed
+--   - Server configs use the native nvim 0.11+ vim.lsp.config() / vim.lsp.enable() API
+--   - Conform.nvim formatters are extended via opts merging (preserves init.lua format_on_save)
+--   - Trouble.nvim v3 for diagnostics panel
 
 -----------------------------------------------------------------------------
 -- Helper --------------------------------------------------------------------
@@ -19,153 +17,129 @@ local function disable_formatting(client)
 end
 
 -----------------------------------------------------------------------------
--- Plugin spec ---------------------------------------------------------------
+-- Plugin specs --------------------------------------------------------------
 -----------------------------------------------------------------------------
 return {
   ---------------------------------------------------------------------------
-  -- Mason-lspconfig ---------------------------------------------------------
+  -- Mason tool installer — ensure HDL/YAML/Markdown tools are installed ----
   ---------------------------------------------------------------------------
   {
-    'williamboman/mason-lspconfig.nvim',
+    'WhoIsSethDaniel/mason-tool-installer.nvim',
     opts = function(_, opts)
       opts.ensure_installed = opts.ensure_installed or {}
-      local add = { 'svls', 'verible', 'vhdl_ls', 'yamlls', 'marksman' }
-      local present = {}
-      for _, s in ipairs(opts.ensure_installed) do
-        present[s] = true
-      end
-      for _, s in ipairs(add) do
-        if not present[s] then
-          table.insert(opts.ensure_installed, s)
-        end
-      end
+      vim.list_extend(opts.ensure_installed, {
+        'svls',
+        'verible',
+        'vhdl_ls',
+        'yaml-language-server',
+        'marksman',
+        'shfmt',
+        'yamlfmt',
+        'markdownlint',
+      })
     end,
   },
 
   ---------------------------------------------------------------------------
-  -- nvim-lspconfig ----------------------------------------------------------
+  -- LSP server configs (nvim 0.11+ native API) ----------------------------
   ---------------------------------------------------------------------------
   {
     'neovim/nvim-lspconfig',
-    opts = {
-      servers = {
-        ---------------------------------------------------------------------
-        -- SystemVerilog LS --------------------------------------------------
-        ---------------------------------------------------------------------
-        svls = {
-          settings = {
-            systemverilog = {
-              includeIndexing = { '**/*.{sv,svh}' },
-              excludeIndexing = { 'test/**/*' },
-              defines = {},
-              launchConfiguration = 'verilator --sv',
-              lintOnUnsaved = true,
-              lintConfig = {
-                rules = {
-                  case_default = true,
-                  multi_driven = true,
-                  enum_with_type = true,
-                  unique_case = true,
-                  module_name_style = 'lower_snake_case',
-                  parameter_name_style = 'UPPER_SNAKE_CASE',
-                  variable_name_style = 'lower_snake_case',
-                  style_indent = false,
-                  style_textwidth = false,
-                  re_required_copyright = false,
-                  re_required_header = false,
-                  blocking_assignment_in_always_ff = false,
-                  non_blocking_assignment_in_always_comb = false,
-                },
+    opts = function()
+      -- Register server configs using the native nvim 0.11+ API.
+      -- The kickstart init.lua config function handles capabilities (via blink.cmp),
+      -- the LspAttach autocmd, and mason-lspconfig handlers for servers in its
+      -- `servers` table. For additional servers not in that table, we use
+      -- vim.lsp.config() + vim.lsp.enable() which is the recommended 0.11+ approach.
+
+      -- SystemVerilog LS
+      vim.lsp.config('svls', {
+        settings = {
+          systemverilog = {
+            includeIndexing = { '**/*.{sv,svh}' },
+            excludeIndexing = { 'test/**/*' },
+            defines = {},
+            launchConfiguration = 'verilator --sv',
+            lintOnUnsaved = true,
+            lintConfig = {
+              rules = {
+                case_default = true,
+                multi_driven = true,
+                enum_with_type = true,
+                unique_case = true,
+                module_name_style = 'lower_snake_case',
+                parameter_name_style = 'UPPER_SNAKE_CASE',
+                variable_name_style = 'lower_snake_case',
+                style_indent = false,
+                style_textwidth = false,
+                re_required_copyright = false,
+                re_required_header = false,
+                blocking_assignment_in_always_ff = false,
+                non_blocking_assignment_in_always_comb = false,
               },
             },
           },
-        root_dir = function(fname)
-          -- Neovim 0.11+: use vim.fs.root for project root detection
-          return vim.fs.root(fname, { '.git', '.svls.toml', 'hdl.tcl', 'Makefile', 'meson.build' })
+        },
+        root_dir = function(bufnr, on_dir)
+          local fname = vim.api.nvim_buf_get_name(bufnr)
+          local root = vim.fs.root(fname, { '.git', '.svls.toml', 'hdl.tcl', 'Makefile', 'meson.build' })
+          if root then
+            on_dir(root)
+          end
         end,
-          on_attach = function(client)
-            disable_formatting(client)
-          end,
-        },
+        on_attach = function(client)
+          disable_formatting(client)
+        end,
+      })
 
-        ---------------------------------------------------------------------
-        -- Verible LS (optional diagnostics, formatting disabled) ------------
-        ---------------------------------------------------------------------
-        verible = {
-          init_options = {
-            formatting = {
-              verible_verilog_format_flags = {
-                '--indentation_spaces=2',
-                '--column_limit=120',
-                '--style=google',
-              },
-            },
-          },
-          on_attach = function(client)
-            disable_formatting(client)
-          end,
-        },
-
-        ---------------------------------------------------------------------
-        -- VHDL --------------------------------------------------------------
-        ---------------------------------------------------------------------
-        vhdl_ls = { settings = { vhdl_ls = {} } },
-
-        ---------------------------------------------------------------------
-        -- YAML --------------------------------------------------------------
-        ---------------------------------------------------------------------
-        yamlls = {
-          settings = {
-            yaml = {
-              keyOrdering = false,
-              validate = true,
-              format = { enable = true },
-              schemaStore = { enable = false, url = '' },
+      -- Verible LS (diagnostics only, formatting disabled — conform handles formatting)
+      vim.lsp.config('verible', {
+        init_options = {
+          formatting = {
+            verible_verilog_format_flags = {
+              '--indentation_spaces=2',
+              '--column_limit=120',
+              '--style=google',
             },
           },
         },
+        on_attach = function(client)
+          disable_formatting(client)
+        end,
+      })
 
-        ---------------------------------------------------------------------
-        -- Markdown ----------------------------------------------------------
-        ---------------------------------------------------------------------
-        marksman = {},
-      },
-    },
+      -- VHDL
+      vim.lsp.config('vhdl_ls', {
+        settings = { vhdl_ls = {} },
+      })
 
-    -- Global setup applying our wrapped on_attach and default capabilities
-    config = function(_, opts)
-      local capabilities = require('cmp_nvim_lsp').default_capabilities()
+      -- YAML
+      vim.lsp.config('yamlls', {
+        settings = {
+          yaml = {
+            keyOrdering = false,
+            validate = true,
+            format = { enable = true },
+            schemaStore = { enable = false, url = '' },
+          },
+        },
+      })
 
-      local function wrap_on_attach(user_on_attach)
-        return function(client, bufnr)
-          if client.name == 'svls' or client.name == 'verible' then
-            disable_formatting(client) -- just in case
-          end
-          if user_on_attach then
-            user_on_attach(client, bufnr)
-          end
-        end
-      end
+      -- Markdown
+      vim.lsp.config('marksman', {})
 
-      -- Register configs using the native nvim 0.11+ API
-      for name, server_opts in pairs(opts.servers) do
-        server_opts.capabilities = vim.tbl_deep_extend('force', capabilities, server_opts.capabilities or {})
-        server_opts.on_attach = wrap_on_attach(server_opts.on_attach)
-        vim.lsp.config(name, server_opts)
-      end
-
-      -- Enable all configured servers
-      vim.lsp.enable(vim.tbl_keys(opts.servers))
+      -- Enable all the servers
+      vim.lsp.enable { 'svls', 'verible', 'vhdl_ls', 'yamlls', 'marksman' }
     end,
   },
 
   ---------------------------------------------------------------------------
-  -- Conform – formatter manager --------------------------------------------
+  -- Conform — additional formatters (merges with init.lua via opts) --------
   ---------------------------------------------------------------------------
   {
     'stevearc/conform.nvim',
     opts = function(_, opts)
-      -- ➊ Map filetypes to formatters
+      -- Extend formatters_by_ft (preserves init.lua's lua/stylua and format_on_save function)
       opts.formatters_by_ft = vim.tbl_deep_extend('force', opts.formatters_by_ft or {}, {
         markdown = { 'markdownlint' },
         sh = { 'shfmt' },
@@ -175,7 +149,7 @@ return {
         verilog = { 'verible_sv' },
       })
 
-      -- ➋ Declare the custom Verible formatter wrapper
+      -- Declare the custom Verible formatter wrapper
       opts.formatters = vim.tbl_deep_extend('force', opts.formatters or {}, {
         verible_sv = {
           command = 'verible-verilog-format',
@@ -193,18 +167,16 @@ return {
         },
       })
 
-      -- ➌ Simple on-save table (no function → avoids boolean index bug)
-      opts.format_on_save = {
-        lsp_fallback = false,
-        timeout_ms = 3000,
-      }
+      -- NOTE: We intentionally do NOT override opts.format_on_save here.
+      -- The function-based format_on_save in init.lua is preserved, which
+      -- correctly disables formatting for C/C++ and uses lsp_format = 'fallback'.
 
       return opts
     end,
   },
 
   ---------------------------------------------------------------------------
-  -- Treesitter --------------------------------------------------------------
+  -- Treesitter — add HDL parsers -------------------------------------------
   ---------------------------------------------------------------------------
   {
     'nvim-treesitter/nvim-treesitter',
@@ -215,13 +187,15 @@ return {
   },
 
   ---------------------------------------------------------------------------
-  -- Trouble.nvim ------------------------------------------------------------
+  -- Trouble.nvim v3 --------------------------------------------------------
   ---------------------------------------------------------------------------
   {
     'folke/trouble.nvim',
     cmd = 'Trouble',
     dependencies = { 'nvim-tree/nvim-web-devicons' },
-    opts = { use_diagnostic_signs = true, auto_close = true },
+    opts = {
+      auto_close = true,
+    },
     keys = {
       { '<leader>td', '<cmd>Trouble diagnostics toggle<cr>', desc = '[T]rouble: [D]iagnostics' },
       { '<leader>tb', '<cmd>Trouble diagnostics toggle filter.buf=0<cr>', desc = '[T]rouble: Buffer' },
@@ -232,4 +206,3 @@ return {
     },
   },
 }
-
