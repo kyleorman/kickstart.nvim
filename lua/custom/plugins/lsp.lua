@@ -1,12 +1,14 @@
 -- lua/custom/plugins/lsp.lua
 -- Extra LSP, Treesitter, formatter and diagnostics helpers for kickstart.nvim
--- Fully tested with kickstart.nvim 2025‑07‑23.
+-- Fully tested with kickstart.nvim 2025-07-23.
 -- ✔  SVLS for IDE features (formatting disabled)
 -- ✔  Verible LSP optional (formatting disabled)
--- ✔  Conform.nvim calls verible‑verilog‑format on save for *.sv/*.svh/*.v
+-- ✔  Conform.nvim calls verible-verilog-format on save for *.sv/*.svh/*.v
 -- ✔  Mason installs both LSPs *and* the Verible binaries.
 
-local util = require 'lspconfig.util'
+-- NOTE (nvim 0.11+):
+-- Avoid `require('lspconfig')` and `require('lspconfig.util')` (deprecated framework path).
+-- Use `vim.lsp.config()` + `vim.lsp.enable()` and `vim.lsp.util.root_pattern()` instead.
 
 -----------------------------------------------------------------------------
 -- Helper --------------------------------------------------------------------
@@ -21,7 +23,7 @@ end
 -----------------------------------------------------------------------------
 return {
   ---------------------------------------------------------------------------
-  -- Mason‑lspconfig ---------------------------------------------------------
+  -- Mason-lspconfig ---------------------------------------------------------
   ---------------------------------------------------------------------------
   {
     'williamboman/mason-lspconfig.nvim',
@@ -41,7 +43,7 @@ return {
   },
 
   ---------------------------------------------------------------------------
-  -- nvim‑lspconfig ----------------------------------------------------------
+  -- nvim-lspconfig ----------------------------------------------------------
   ---------------------------------------------------------------------------
   {
     'neovim/nvim-lspconfig',
@@ -77,9 +79,10 @@ return {
               },
             },
           },
-          root_dir = function(fname)
-            return util.root_pattern('.git', '.svls.toml', 'hdl.tcl')(fname) or util.root_pattern('Makefile', 'meson.build')(fname)
-          end,
+        root_dir = function(fname)
+          -- Neovim 0.11+: use vim.fs.root for project root detection
+          return vim.fs.root(fname, { '.git', '.svls.toml', 'hdl.tcl', 'Makefile', 'meson.build' })
+        end,
           on_attach = function(client)
             disable_formatting(client)
           end,
@@ -131,7 +134,6 @@ return {
 
     -- Global setup applying our wrapped on_attach and default capabilities
     config = function(_, opts)
-      local lspconfig = require 'lspconfig'
       local capabilities = require('cmp_nvim_lsp').default_capabilities()
 
       local function wrap_on_attach(user_on_attach)
@@ -145,11 +147,15 @@ return {
         end
       end
 
+      -- Register configs using the native nvim 0.11+ API
       for name, server_opts in pairs(opts.servers) do
         server_opts.capabilities = vim.tbl_deep_extend('force', capabilities, server_opts.capabilities or {})
         server_opts.on_attach = wrap_on_attach(server_opts.on_attach)
-        lspconfig[name].setup(server_opts)
+        vim.lsp.config(name, server_opts)
       end
+
+      -- Enable all configured servers
+      vim.lsp.enable(vim.tbl_keys(opts.servers))
     end,
   },
 
@@ -187,7 +193,7 @@ return {
         },
       })
 
-      -- ➌ Simple on‑save table (no function → avoids boolean index bug)
+      -- ➌ Simple on-save table (no function → avoids boolean index bug)
       opts.format_on_save = {
         lsp_fallback = false,
         timeout_ms = 3000,
@@ -226,3 +232,4 @@ return {
     },
   },
 }
+

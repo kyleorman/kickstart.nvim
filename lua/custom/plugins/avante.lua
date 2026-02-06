@@ -2,7 +2,7 @@
 return {
   'yetone/avante.nvim',
   build = (vim.fn.has 'win32' == 1 or vim.fn.has 'win64' == 1) and 'powershell -ExecutionPolicy Bypass -File Build.ps1 -BuildFromSource false'
-    or 'make BUILD_FROM_SOURCE=true',
+    or 'make BUILD_FROM_SOURCE=false',
   event = 'VeryLazy',
   version = false,
   opts = {
