@@ -661,6 +661,11 @@ require('lazy').setup({
       --  So, we create new capabilities with blink.cmp, and then broadcast that to the servers.
       local capabilities = require('blink.cmp').get_lsp_capabilities()
 
+      local function disable_formatting(client)
+        client.server_capabilities.documentFormattingProvider = false
+        client.server_capabilities.documentRangeFormattingProvider = false
+      end
+
       -- Enable the following language servers
       --  Feel free to add/remove any LSPs that you want here. They will automatically be installed.
       --
@@ -671,10 +676,27 @@ require('lazy').setup({
       --  - settings (table): Override the default settings passed when initializing the server.
       --        For example, to see the options for `lua_ls`, you could go to: https://luals.github.io/wiki/settings/
       local servers = {
-        -- clangd = {},
+        clangd = {
+          cmd = { 'clangd', '--background-index', '--clang-tidy', '--completion-style=detailed', '--header-insertion=iwyu' },
+        },
         -- gopls = {},
-        -- pyright = {},
-        -- rust_analyzer = {},
+        pyright = {
+          settings = {
+            python = {
+              analysis = {
+                typeCheckingMode = 'basic',
+              },
+            },
+          },
+        },
+        rust_analyzer = {
+          settings = {
+            ['rust-analyzer'] = {
+              cargo = { allFeatures = true },
+              checkOnSave = { command = 'clippy' },
+            },
+          },
+        },
         -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
         --
         -- Some languages (like typescript) have entire language plugins that can be useful:
@@ -684,6 +706,64 @@ require('lazy').setup({
         -- ts_ls = {},
         --
 
+        svls = {
+          settings = {
+            systemverilog = {
+              includeIndexing = { '**/*.{sv,svh}' },
+              excludeIndexing = { 'test/**/*' },
+              defines = {},
+              launchConfiguration = 'verilator --sv',
+              lintOnUnsaved = true,
+              lintConfig = {
+                rules = {
+                  case_default = true,
+                  multi_driven = true,
+                  enum_with_type = true,
+                  unique_case = true,
+                  module_name_style = 'lower_snake_case',
+                  parameter_name_style = 'UPPER_SNAKE_CASE',
+                  variable_name_style = 'lower_snake_case',
+                  style_indent = false,
+                  style_textwidth = false,
+                  re_required_copyright = false,
+                  re_required_header = false,
+                  blocking_assignment_in_always_ff = false,
+                  non_blocking_assignment_in_always_comb = false,
+                },
+              },
+            },
+          },
+          root_dir = function(fname)
+            return vim.fs.root(fname, { '.git', '.svls.toml', 'hdl.tcl', 'Makefile', 'meson.build' })
+          end,
+          on_attach = disable_formatting,
+        },
+        verible = {
+          init_options = {
+            formatting = {
+              verible_verilog_format_flags = {
+                '--indentation_spaces=2',
+                '--column_limit=120',
+                '--style=google',
+              },
+            },
+          },
+          on_attach = disable_formatting,
+        },
+        vhdl_ls = {
+          settings = { vhdl_ls = {} },
+        },
+        yamlls = {
+          settings = {
+            yaml = {
+              keyOrdering = false,
+              validate = true,
+              format = { enable = true },
+              schemaStore = { enable = false, url = '' },
+            },
+          },
+        },
+        marksman = {},
         lua_ls = {
           -- cmd = { ... },
           -- filetypes = { ... },
@@ -716,6 +796,13 @@ require('lazy').setup({
       local ensure_installed = vim.tbl_keys(servers or {})
       vim.list_extend(ensure_installed, {
         'stylua', -- Used to format Lua code
+        'clang-format',
+        'black',
+        'isort',
+        'markdownlint',
+        'ruff',
+        'shfmt',
+        'yamlfmt',
       })
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
@@ -996,6 +1083,10 @@ require('lazy').setup({
   -- In normal mode type `<space>sh` then write `lazy.nvim-plugin`
   -- you can continue same window with `<space>sr` which resumes last telescope search
 }, {
+  rocks = {
+    enabled = true,
+    hererocks = false,
+  },
   ui = {
     -- If you are using a Nerd Font: set icons to an empty table which will use the
     -- default lazy.nvim defined Nerd Font icons, otherwise define a unicode icons table

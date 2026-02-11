@@ -10,6 +10,7 @@ return {
       -- Global defaults: 4‑space, expand tabs everywhere
       -----------------------------------------------------------------------
       vim.opt.expandtab = true
+      vim.opt.tabstop = 4
       vim.opt.shiftwidth = 4
       vim.opt.softtabstop = 4
 
@@ -19,6 +20,7 @@ return {
       vim.api.nvim_create_autocmd('FileType', {
         pattern = { 'systemverilog', 'verilog', 'vhdl' },
         callback = function()
+          vim.bo.tabstop = 2
           vim.bo.shiftwidth = 2
           vim.bo.softtabstop = 2
         end,

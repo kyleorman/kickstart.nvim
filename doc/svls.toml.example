@@ -1,0 +1,7 @@
+[verilog]
+include_paths = ["rtl", "include"]
+defines = ["SIM", "FPGA=1"]
+plugins = []
+
+[option]
+linter = true
