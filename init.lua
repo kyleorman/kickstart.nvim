@@ -481,8 +481,15 @@ require('lazy').setup({
     dependencies = {
       -- Automatically install LSPs and related tools to stdpath for Neovim
       -- Mason must be loaded before its dependents so we need to set it up here.
-      -- NOTE: `opts = {}` is the same as calling `require('mason').setup({})`
-      { 'mason-org/mason.nvim', opts = {} },
+      { -- Mason's PATH injection breaks on NixOS, so skip it there.
+        'mason-org/mason.nvim',
+        opts = function()
+          local is_nixos = require('custom.utils.platform').is_nixos()
+          return {
+            PATH = is_nixos and 'skip' or 'prepend',
+          }
+        end,
+      },
       'mason-org/mason-lspconfig.nvim',
       'WhoIsSethDaniel/mason-tool-installer.nvim',
 
@@ -804,7 +811,8 @@ require('lazy').setup({
         'shfmt',
         'yamlfmt',
       })
-      require('mason-tool-installer').setup { ensure_installed = ensure_installed }
+      local mason_ensure_installed = require('custom.utils.platform').is_nixos() and {} or ensure_installed
+      require('mason-tool-installer').setup { ensure_installed = mason_ensure_installed }
 
       require('mason-lspconfig').setup {
         ensure_installed = {}, -- explicitly set to an empty table (Kickstart populates installs via mason-tool-installer)
