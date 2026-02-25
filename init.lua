@@ -917,7 +917,11 @@ require('lazy').setup({
       -- Load the colorscheme here.
       -- Like many other themes, this one has different styles, and you could load
       -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
-      vim.cmd.colorscheme 'tokyonight-night'
+      local uv = vim.uv or vim.loop
+      local has_custom_dankcolors = uv.fs_stat(vim.fn.stdpath 'config' .. '/lua/custom/plugins/dankcolors.lua') ~= nil
+      if not has_custom_dankcolors then
+        vim.cmd.colorscheme 'tokyonight-night'
+      end
     end,
   },
 
